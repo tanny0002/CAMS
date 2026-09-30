@@ -1,0 +1,103 @@
+<?php
+/**
+ * One-time installer: imports schema and sets demo passwords.
+ * Open once, then delete/rename this file.
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . '/config/config.php';
+
+$messages = [];
+$ok = true;
+
+function run_sql_file(PDO $pdo, string $path): void
+{
+    $sql = file_get_contents($path);
+    if ($sql === false) {
+        throw new RuntimeException('Could not read ' . $path);
+    }
+
+    // Remove block comments and full-line -- comments (so ; inside comments cannot split statements)
+    $sql = preg_replace('#/\*.*?\*/#s', '', $sql) ?? $sql;
+    $sql = preg_replace('/^\s*--.*$/m', '', $sql) ?? $sql;
+
+    $statements = array_filter(array_map('trim', explode(';', $sql)));
+    foreach ($statements as $statement) {
+        if ($statement !== '') {
+            $pdo->exec($statement);
+        }
+    }
+}
+
+try {
+    $pdo = new PDO(
+        'mysql:host=' . DB_HOST . ';charset=' . DB_CHARSET,
+        DB_USER,
+        DB_PASS,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    );
+
+    run_sql_file($pdo, __DIR__ . '/database/schema.sql');
+    $messages[] = 'Database schema imported successfully.';
+
+    $pdo->exec('USE `' . DB_NAME . '`');
+
+    $passwords = [
+        'admin@cams.local' => 'Admin@123',
+        'lecturer@cams.local' => 'Lecturer@123',
+        'student@cams.local' => 'Student@123',
+    ];
+
+    $stmt = $pdo->prepare('UPDATE users SET password_hash = ? WHERE email = ?');
+    foreach ($passwords as $email => $plain) {
+        $stmt->execute([password_hash($plain, PASSWORD_DEFAULT), $email]);
+    }
+    $messages[] = 'Demo account passwords set.';
+
+    require_once __DIR__ . '/database/content_pack.php';
+    $pack = cams_apply_content_pack($pdo);
+    $messages[] = sprintf(
+        'Expanded curriculum applied (%d lessons, %d quizzes, %d questions).',
+        $pack['lessons'],
+        $pack['quizzes'],
+        $pack['questions']
+    );
+
+    require_once __DIR__ . '/database/question_bank_generator.php';
+    $bank = cams_seed_question_banks($pdo, defined('QUESTION_BANK_SIZE') ? QUESTION_BANK_SIZE : 1001);
+    $messages[] = sprintf('Question banks seeded across %d modules.', $bank['modules']);
+} catch (Throwable $e) {
+    $ok = false;
+    $messages[] = 'Error: ' . $e->getMessage();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CAMS Installer</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+        .ok { color: #0a7; } .err { color: #c33; }
+        code { background: #f2f2f2; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>CAMS Installer</h1>
+    <?php foreach ($messages as $m): ?>
+        <p class="<?= $ok ? 'ok' : 'err' ?>"><?= htmlspecialchars($m) ?></p>
+    <?php endforeach; ?>
+    <?php if ($ok): ?>
+        <h2>Demo logins</h2>
+        <ul>
+            <li>Admin: <code>admin@cams.local</code> / <code>Admin@123</code></li>
+            <li>Lecturer: <code>lecturer@cams.local</code> / <code>Lecturer@123</code></li>
+            <li>Student: <code>student@cams.local</code> / <code>Student@123</code></li>
+        </ul>
+        <p><a href="index.php">Go to CAMS</a></p>
+        <p><strong>Important:</strong> Delete or rename <code>install.php</code> after setup.</p>
+    <?php else: ?>
+        <p>Ensure MySQL (XAMPP) is running and credentials in <code>config/config.php</code> are correct, then refresh.</p>
+    <?php endif; ?>
+</body>
+</html>

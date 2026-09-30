@@ -1,0 +1,27 @@
+# Secrets & local config
+.env
+**/.env
+**/.env.*
+!.env.example
+user/.env
+.php.ini
+
+# Installer after setup (keep .bak out of public if preferred — we commit source as install.php.bak ok)
+# storage
+storage/sessions/*
+!storage/sessions/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+*.log
+
+# PHP / composer
+vendor/
+
+# Temp
+tmp/
+*.tmp

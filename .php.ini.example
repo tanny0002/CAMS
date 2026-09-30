@@ -1,0 +1,13 @@
+; Copy to .php.ini and adjust extension_dir for your PHP install.
+extension_dir = "ext"
+extension=pdo_mysql
+extension=mysqli
+extension=openssl
+extension=mbstring
+extension=curl
+display_errors = On
+error_reporting = E_ALL
+date.timezone = Africa/Harare
+session.cookie_httponly = 1
+session.cookie_samesite = Lax
+session.use_strict_mode = 1

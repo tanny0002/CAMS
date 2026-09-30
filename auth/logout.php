@@ -1,0 +1,8 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../includes/helpers.php';
+start_app_session();
+logout_user();
+flash('success', 'You have been logged out.');
+redirect('auth/login.php');
