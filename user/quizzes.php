@@ -6,18 +6,66 @@ start_app_session();
 require_login();
 
 $uid = (int) current_user()['id'];
+$allowedModules = user_approved_module_ids($uid);
 
-$quizzes = db()->query(
-    "SELECT q.*, m.title AS module_title,
-     (SELECT COUNT(*) FROM questions qs WHERE qs.quiz_id = q.id AND qs.is_active = 1) AS question_count,
-     (SELECT COUNT(*) FROM questions qs
-        JOIN quizzes qb ON qb.id = qs.quiz_id
-        WHERE qb.module_id = q.module_id AND qb.quiz_type = 'bank' AND qs.is_active = 1) AS bank_count
+$quizzesSql = "SELECT q.*, m.title AS module_title
      FROM quizzes q
      JOIN modules m ON m.id = q.module_id
-     WHERE q.is_active = 1 AND q.quiz_type IN ('practice','module','exam')
-     ORDER BY FIELD(q.quiz_type, 'practice', 'module', 'exam'), m.sort_order, q.id"
+     WHERE q.is_active = 1 AND q.quiz_type IN ('practice','module','exam')";
+if (current_user()['role'] !== 'admin') {
+    if ($allowedModules === []) {
+        $quizzesSql .= ' AND 1=0';
+    } else {
+        $quizzesSql .= ' AND q.module_id IN (' . implode(',', array_map('intval', $allowedModules)) . ')';
+    }
+}
+$quizzesSql .= " ORDER BY CASE q.quiz_type
+        WHEN 'practice' THEN 1 WHEN 'module' THEN 2 WHEN 'exam' THEN 3 ELSE 4 END,
+        m.sort_order, q.id";
+$quizzes = db()->query($quizzesSql)->fetchAll();
+
+$bankByModule = [];
+$bankRows = db()->query(
+    "SELECT qb.module_id, COUNT(*) AS bank_count
+     FROM questions qs
+     JOIN quizzes qb ON qb.id = qs.quiz_id
+     WHERE qb.quiz_type = 'bank' AND qs.is_active = 1
+     GROUP BY qb.module_id"
 )->fetchAll();
+foreach ($bankRows as $row) {
+    $bankByModule[(int) $row['module_id']] = (int) $row['bank_count'];
+}
+
+$attemptStats = [];
+if ($quizzes !== []) {
+    $quizIds = array_map(static fn ($q) => (int) $q['id'], $quizzes);
+    $in = implode(',', $quizIds);
+    if (db_is_pgsql()) {
+        $stats = db()->prepare(
+            "SELECT quiz_id,
+                    COUNT(*) FILTER (WHERE submitted_at IS NOT NULL) AS attempts_used,
+                    MAX(score) FILTER (WHERE submitted_at IS NOT NULL) AS best_score,
+                    COUNT(*) FILTER (WHERE passed = 1) AS pass_count
+             FROM quiz_attempts
+             WHERE user_id = ? AND quiz_id IN ($in)
+             GROUP BY quiz_id"
+        );
+    } else {
+        $stats = db()->prepare(
+            "SELECT quiz_id,
+                    SUM(CASE WHEN submitted_at IS NOT NULL THEN 1 ELSE 0 END) AS attempts_used,
+                    MAX(CASE WHEN submitted_at IS NOT NULL THEN score ELSE NULL END) AS best_score,
+                    SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) AS pass_count
+             FROM quiz_attempts
+             WHERE user_id = ? AND quiz_id IN ($in)
+             GROUP BY quiz_id"
+        );
+    }
+    $stats->execute([$uid]);
+    foreach ($stats->fetchAll() as $row) {
+        $attemptStats[(int) $row['quiz_id']] = $row;
+    }
+}
 
 $groups = [
     'practice' => ['label' => 'Practice drills', 'blurb' => 'Unlimited-style practice to learn without pressure. Lower pass mark, more attempts.'],
@@ -55,15 +103,11 @@ require __DIR__ . '/../includes/header.php';
         <div class="grid" style="margin-top:1rem">
             <?php foreach ($byType[$type] as $quiz): ?>
                 <?php
-                $used = db()->prepare('SELECT COUNT(*) FROM quiz_attempts WHERE user_id = ? AND quiz_id = ? AND submitted_at IS NOT NULL');
-                $used->execute([$uid, (int) $quiz['id']]);
-                $attemptsUsed = (int) $used->fetchColumn();
-                $best = db()->prepare('SELECT MAX(score) FROM quiz_attempts WHERE user_id = ? AND quiz_id = ? AND submitted_at IS NOT NULL');
-                $best->execute([$uid, (int) $quiz['id']]);
-                $bestScore = $best->fetchColumn();
-                $passed = db()->prepare('SELECT COUNT(*) FROM quiz_attempts WHERE user_id = ? AND quiz_id = ? AND passed = 1');
-                $passed->execute([$uid, (int) $quiz['id']]);
-                $hasPass = (int) $passed->fetchColumn() > 0;
+                $qid = (int) $quiz['id'];
+                $stat = $attemptStats[$qid] ?? null;
+                $attemptsUsed = (int) ($stat['attempts_used'] ?? 0);
+                $bestScore = $stat['best_score'] ?? null;
+                $hasPass = (int) ($stat['pass_count'] ?? 0) > 0;
                 $remaining = max(0, (int) $quiz['max_attempts'] - $attemptsUsed);
                 $typeLabel = match ($quiz['quiz_type'] ?? 'module') {
                     'practice' => 'Practice',
@@ -83,7 +127,7 @@ require __DIR__ . '/../includes/header.php';
                         if ($draw < 1) {
                             $draw = quiz_default_draw_count((string) ($quiz['quiz_type'] ?? 'module'));
                         }
-                        $bank = (int) ($quiz['bank_count'] ?? 0);
+                        $bank = $bankByModule[(int) $quiz['module_id']] ?? 0;
                         $bestNum = $bestScore !== null ? (float) $bestScore : 0.0;
                         $passMark = (int) $quiz['pass_mark'];
                         ?>
@@ -102,7 +146,7 @@ require __DIR__ . '/../includes/header.php';
                         </div>
                     </div>
                     <?php if ($remaining > 0): ?>
-                        <a class="btn btn-sm btn-primary" href="<?= e(APP_URL) ?>/user/take-quiz.php?id=<?= (int) $quiz['id'] ?>">
+                        <a class="btn btn-sm btn-primary" href="<?= e(APP_URL) ?>/user/take-quiz.php?id=<?= $qid ?>">
                             <?= $type === 'exam' ? 'Start exam' : ($type === 'practice' ? 'Practice' : 'Start quiz') ?>
                         </a>
                     <?php else: ?>

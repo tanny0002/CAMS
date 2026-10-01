@@ -5,7 +5,7 @@ require_once __DIR__ . '/includes/helpers.php';
 start_app_session();
 
 if (is_logged_in()) {
-    redirect(role_home(current_user()['role']));
+    post_login_redirect();
 }
 
 $pageTitle = 'Welcome';
@@ -312,7 +312,7 @@ $img = static fn(string $file): string => e(APP_URL) . '/assets/images/' . $file
                     </span>
                     <h3>Account security basics</h3>
                 </div>
-                <p>Login sessions with timeout, CSRF protection, role-based access, and password reset for demos.</p>
+                <p>Login sessions with timeout, CSRF protection, role-based access, email OTP verification, and password reset by email.</p>
             </article>
         </div>
     </section>

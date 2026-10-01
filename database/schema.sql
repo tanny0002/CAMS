@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS feedback;
 DROP TABLE IF EXISTS activity_logs;
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS password_resets;
+DROP TABLE IF EXISTS email_otps;
 DROP TABLE IF EXISTS certificates;
 DROP TABLE IF EXISTS quiz_answers;
 DROP TABLE IF EXISTS quiz_attempts;
@@ -27,13 +28,17 @@ CREATE TABLE users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     full_name VARCHAR(120) NOT NULL,
     email VARCHAR(160) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NULL,
     role ENUM('user', 'lecturer', 'admin') NOT NULL DEFAULT 'user',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     consent_accepted TINYINT(1) NOT NULL DEFAULT 0,
+    email_verified_at DATETIME NULL,
+    oauth_provider VARCHAR(32) NULL,
+    oauth_id VARCHAR(191) NULL,
     last_login_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP
+    updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_users_oauth (oauth_provider, oauth_id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE modules (
@@ -158,6 +163,18 @@ CREATE TABLE password_resets (
     CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE email_otps (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(160) NOT NULL,
+    purpose ENUM('register','login','reset') NOT NULL DEFAULT 'register',
+    code_hash VARCHAR(255) NOT NULL,
+    payload TEXT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_otp_email_purpose (email, purpose)
+) ENGINE=InnoDB;
+
 CREATE TABLE activity_logs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NULL,
@@ -188,12 +205,8 @@ CREATE TABLE feedback (
     CONSTRAINT fk_feedback_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- Seed users (password hashes generated for: Admin@123, Lecturer@123, Student@123)
--- Hashes will be updated by seed_passwords.php if needed. Placeholders below use known bcrypt for Admin@123 style.
-INSERT INTO users (full_name, email, password_hash, role, is_active, consent_accepted) VALUES
-('System Admin', 'admin@cams.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', 1, 1),
-('Jane Lecturer', 'lecturer@cams.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'lecturer', 1, 1),
-('Sam Student', 'student@cams.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'user', 1, 1);
+-- No demo user accounts. Register via email OTP or Google/GitHub.
+-- First registered user (or BOOTSTRAP_ADMIN_EMAIL) becomes admin.
 
 INSERT INTO modules (title, slug, description, difficulty, sort_order) VALUES
 ('Phishing Awareness', 'phishing', 'Recognise deceptive messages and avoid phishing traps.', 'beginner', 1),

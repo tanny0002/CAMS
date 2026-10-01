@@ -442,18 +442,19 @@ function cams_question_topic_kits(): array
 function cams_ensure_bank_quiz(PDO $pdo, int $moduleId, string $moduleTitle): int
 {
     cams_ensure_quiz_type_column($pdo);
-    // Expand enum with bank if needed
-    $type = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'quiz_type'")->fetch();
-    if ($type && !str_contains((string) $type['Type'], 'bank')) {
-        $pdo->exec(
-            "ALTER TABLE quizzes MODIFY COLUMN quiz_type ENUM('practice','module','exam','bank') NOT NULL DEFAULT 'module'"
-        );
-    }
-    $drawCol = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'questions_to_draw'")->fetch();
-    if (!$drawCol) {
-        $pdo->exec(
-            'ALTER TABLE quizzes ADD COLUMN questions_to_draw SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER max_attempts'
-        );
+    if (!(defined('DB_DRIVER') && DB_DRIVER === 'pgsql')) {
+        $type = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'quiz_type'")->fetch();
+        if ($type && !str_contains((string) $type['Type'], 'bank')) {
+            $pdo->exec(
+                "ALTER TABLE quizzes MODIFY COLUMN quiz_type ENUM('practice','module','exam','bank') NOT NULL DEFAULT 'module'"
+            );
+        }
+        $drawCol = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'questions_to_draw'")->fetch();
+        if (!$drawCol) {
+            $pdo->exec(
+                'ALTER TABLE quizzes ADD COLUMN questions_to_draw SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER max_attempts'
+            );
+        }
     }
 
     $title = $moduleTitle . ' — Question Bank';

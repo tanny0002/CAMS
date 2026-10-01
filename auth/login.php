@@ -3,29 +3,45 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/helpers.php';
 start_app_session();
+ensure_auth_schema();
 
 if (is_logged_in()) {
-    redirect(role_home(current_user()['role']));
+    post_login_redirect();
 }
 
 $error = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    $email = trim((string) ($_POST['email'] ?? ''));
+    $email = strtolower(trim((string) ($_POST['email'] ?? '')));
     $password = (string) ($_POST['password'] ?? '');
-
-    $stmt = db()->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
-    $stmt->execute([$email]);
-    $user = $stmt->fetch();
-
-    if (!$user || !(int) $user['is_active'] || !password_verify($password, $user['password_hash'])) {
-        $error = 'Invalid email or password.';
-        log_activity($user['id'] ?? null, 'login_failed', $email);
+    $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+    $wait = rate_limit_hit('login:' . $ip . ':' . $email, 8, 900);
+    if ($wait > 0) {
+        $error = 'Too many login attempts. Try again in about ' . (int) ceil($wait / 60) . ' minute(s).';
     } else {
-        login_user($user);
-        flash('success', 'Welcome back, ' . $user['full_name'] . '!');
-        redirect(role_home($user['role']));
+        $stmt = db()->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
+        $stmt->execute([$email]);
+        $user = $stmt->fetch();
+
+        $hash = $user['password_hash'] ?? null;
+        $ok = $user
+            && (int) $user['is_active']
+            && is_string($hash)
+            && $hash !== ''
+            && password_verify($password, $hash);
+
+        if (!$ok) {
+            $error = 'Invalid email or password.';
+            if ($user && (empty($hash) || $hash === null)) {
+                $error = 'This account uses Google or GitHub sign-in. Use the social buttons below.';
+            }
+            log_activity($user['id'] ?? null, 'login_failed', $email);
+        } else {
+            login_user($user);
+            flash('success', 'Welcome back, ' . $user['full_name'] . '!');
+            post_login_redirect();
+        }
     }
 }
 
@@ -67,6 +83,8 @@ $panelImg = e(APP_URL) . '/assets/images/auth-login-panel.png';
             <?php endforeach; ?>
             <?php if ($error): ?><div class="alert alert-error"><?= e($error) ?></div><?php endif; ?>
 
+            <?= auth_oauth_buttons_html('login') ?>
+
             <form method="post" action="" class="auth-form">
                 <?= csrf_field() ?>
                 <div class="form-group">
@@ -82,15 +100,6 @@ $panelImg = e(APP_URL) . '/assets/images/auth-login-panel.png';
                 </div>
                 <button class="btn btn-primary btn-block" type="submit">Log in</button>
             </form>
-
-            <div class="auth-help-box">
-                <p class="auth-help-title">Demo accounts</p>
-                <ul>
-                    <li><strong>Admin</strong> — admin@cams.local / Admin@123</li>
-                    <li><strong>Lecturer</strong> — lecturer@cams.local / Lecturer@123</li>
-                    <li><strong>Student</strong> — student@cams.local / Student@123</li>
-                </ul>
-            </div>
 
             <p class="auth-footer-note">
                 No account?

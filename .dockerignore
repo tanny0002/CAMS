@@ -1,0 +1,15 @@
+.git
+.env
+**/.env
+**/.env.*
+!.env.example
+user/.env
+.php.ini
+storage/sessions/*
+storage/rate_limits/*
+storage/logs/*
+!storage/logs/.gitkeep
+!storage/sessions/.gitkeep
+!storage/rate_limits/.gitkeep
+*.md.bak
+install.php

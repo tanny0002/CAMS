@@ -7,7 +7,16 @@ declare(strict_types=1);
 
 function cams_ensure_quiz_type_column(PDO $pdo): void
 {
-    $col = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'quiz_type'")->fetch();
+    // Schema already includes quiz_type + questions_to_draw on fresh installs.
+    // Keep a light check for older MySQL DBs only.
+    if (defined('DB_DRIVER') && DB_DRIVER === 'pgsql') {
+        return;
+    }
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'quiz_type'")->fetch();
+    } catch (Throwable $e) {
+        return;
+    }
     if (!$col) {
         $pdo->exec(
             "ALTER TABLE quizzes

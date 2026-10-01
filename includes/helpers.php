@@ -2,6 +2,9 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/auth_extra.php';
+require_once __DIR__ . '/oauth.php';
+require_once __DIR__ . '/access.php';
 
 function e(?string $value): string
 {
@@ -128,6 +131,7 @@ function require_login(): void
         flash('error', 'Please log in to continue.');
         redirect('auth/login.php');
     }
+    ensure_access_schema();
     // Refresh active status
     $user = current_user();
     $stmt = db()->prepare('SELECT is_active FROM users WHERE id = ?');
@@ -138,6 +142,7 @@ function require_login(): void
         flash('error', 'Your account is inactive. Contact an administrator.');
         redirect('auth/login.php');
     }
+    enforce_access_gates();
 }
 
 function require_role(array $roles): void
@@ -152,12 +157,17 @@ function require_role(array $roles): void
 
 function login_user(array $user): void
 {
+    ensure_access_schema();
     session_regenerate_id(true);
     $_SESSION['user'] = [
         'id' => (int) $user['id'],
         'full_name' => $user['full_name'],
         'email' => $user['email'],
         'role' => $user['role'],
+        'account_type' => $user['account_type'] ?? null,
+        'profile_complete' => (int) ($user['profile_complete'] ?? 0),
+        'must_change_password' => (int) ($user['must_change_password'] ?? 0),
+        'approval_status' => $user['approval_status'] ?? 'pending',
     ];
     $stmt = db()->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?');
     $stmt->execute([(int) $user['id']]);
@@ -202,7 +212,7 @@ function role_home(string $role): string
 {
     return match ($role) {
         'admin' => 'admin/dashboard.php',
-        'lecturer' => 'admin/reports.php',
+        'lecturer' => 'lecturer/dashboard.php',
         default => 'user/dashboard.php',
     };
 }
@@ -238,7 +248,7 @@ function issue_certificate_if_eligible(int $userId, int $moduleId): ?string
     $quiz = db()->prepare(
         "SELECT id FROM quizzes
          WHERE module_id = ? AND is_active = 1 AND quiz_type IN ('module', 'exam')
-         ORDER BY FIELD(quiz_type, 'exam', 'module') LIMIT 1"
+         ORDER BY CASE quiz_type WHEN 'exam' THEN 1 WHEN 'module' THEN 2 ELSE 3 END LIMIT 1"
     );
     $quiz->execute([$moduleId]);
     $quizId = $quiz->fetchColumn();
@@ -274,8 +284,9 @@ function issue_certificate_if_eligible(int $userId, int $moduleId): ?string
  * Add ids to h2/h3 and return [html, toc[]] for article navigation.
  * @return array{0: string, 1: list<array{id: string, text: string, level: int}>}
  */
-function lesson_content_with_toc(string $html): array
+function lesson_content_with_toc(string $html, ?string $lessonTitle = null): array
 {
+    $html = normalize_lesson_html($html, $lessonTitle);
     if (trim($html) === '') {
         return ['', []];
     }
@@ -312,6 +323,44 @@ function lesson_content_with_toc(string $html): array
     return [$enriched ?? $html, $toc];
 }
 
+/**
+ * Clean lesson HTML for readable presentation (dedupe title, polish blocks).
+ */
+function normalize_lesson_html(string $html, ?string $lessonTitle = null): string
+{
+    $html = trim($html);
+    if ($html === '') {
+        return '';
+    }
+
+    // Decode accidental double-escaped fragments from older seeds
+    if (str_contains($html, '&lt;h2') || str_contains($html, '&lt;p')) {
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    }
+
+    // Drop leading H2 that repeats the lesson title (page already has H1)
+    if ($lessonTitle !== null && $lessonTitle !== '') {
+        $quoted = preg_quote(trim($lessonTitle), '/');
+        $html = preg_replace(
+            '/^\s*<h2[^>]*>\s*' . $quoted . '\s*<\/h2>\s*/iu',
+            '',
+            $html,
+            1
+        ) ?? $html;
+    }
+
+    // Ensure tables scroll on small screens
+    if (!str_contains($html, 'lesson-table-wrap') && str_contains($html, '<table')) {
+        $html = preg_replace_callback(
+            '/<table\b[^>]*>.*?<\/table>/is',
+            static fn(array $m): string => '<div class="lesson-table-wrap">' . $m[0] . '</div>',
+            $html
+        ) ?? $html;
+    }
+
+    return trim($html);
+}
+
 function estimate_read_minutes(string $html): int
 {
     $words = str_word_count(strip_tags($html));
@@ -336,19 +385,14 @@ function ensure_quiz_bank_schema(): void
     if ($done) {
         return;
     }
-    $pdo = db();
-    $type = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'quiz_type'")->fetch();
-    if ($type && isset($type['Type']) && !str_contains((string) $type['Type'], 'bank')) {
-        $pdo->exec(
-            "ALTER TABLE quizzes
-             MODIFY COLUMN quiz_type ENUM('practice','module','exam','bank') NOT NULL DEFAULT 'module'"
-        );
-    }
-    $draw = $pdo->query("SHOW COLUMNS FROM quizzes LIKE 'questions_to_draw'")->fetch();
-    if (!$draw) {
-        $pdo->exec(
-            'ALTER TABLE quizzes ADD COLUMN questions_to_draw SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER max_attempts'
-        );
+    if (!db_has_column('quizzes', 'questions_to_draw')) {
+        if (db_is_pgsql()) {
+            db()->exec('ALTER TABLE quizzes ADD COLUMN questions_to_draw SMALLINT NOT NULL DEFAULT 0');
+        } else {
+            db()->exec(
+                'ALTER TABLE quizzes ADD COLUMN questions_to_draw SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER max_attempts'
+            );
+        }
     }
     $done = true;
 }

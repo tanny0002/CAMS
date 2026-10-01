@@ -3,9 +3,16 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/helpers.php';
 start_app_session();
+ensure_access_schema();
 
 if (is_logged_in()) {
-    redirect(role_home(current_user()['role']));
+    post_login_redirect();
+}
+
+$inviteToken = (string) ($_GET['invite'] ?? $_SESSION['invite_token'] ?? '');
+$invite = $inviteToken !== '' ? find_valid_invitation($inviteToken) : null;
+if ($invite) {
+    $_SESSION['invite_token'] = $inviteToken;
 }
 
 $error = null;
@@ -13,10 +20,16 @@ $error = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $name = trim((string) ($_POST['full_name'] ?? ''));
-    $email = trim((string) ($_POST['email'] ?? ''));
+    $email = strtolower(trim((string) ($_POST['email'] ?? '')));
     $password = (string) ($_POST['password'] ?? '');
     $confirm = (string) ($_POST['password_confirm'] ?? '');
     $consent = isset($_POST['consent']);
+    $inviteToken = (string) ($_POST['invite_token'] ?? $inviteToken);
+    $invite = $inviteToken !== '' ? find_valid_invitation($inviteToken) : null;
+
+    if ($invite) {
+        $email = strtolower((string) $invite['email']);
+    }
 
     if ($name === '' || $email === '' || $password === '') {
         $error = 'Please fill in all required fields.';
@@ -28,21 +41,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Passwords do not match.';
     } elseif (!$consent) {
         $error = 'You must accept the privacy notice to register.';
+    } elseif (!mail_is_configured()) {
+        $error = 'Email delivery is not configured. Contact the administrator.';
     } else {
+        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        $wait = rate_limit_hit('register-otp:' . $ip . ':' . $email, 5, 900);
+        if ($wait > 0) {
+            $error = 'Too many verification emails requested. Try again in about ' . (int) ceil($wait / 60) . ' minute(s).';
+        } else {
         $check = db()->prepare('SELECT id FROM users WHERE email = ?');
         $check->execute([$email]);
         if ($check->fetch()) {
-            $error = 'An account with that email already exists.';
+            $error = 'An account with that email already exists. Try logging in or use Google/GitHub.';
         } else {
-            $hash = password_hash($password, PASSWORD_DEFAULT);
-            $ins = db()->prepare(
-                'INSERT INTO users (full_name, email, password_hash, role, consent_accepted) VALUES (?, ?, ?, \'user\', 1)'
-            );
-            $ins->execute([$name, $email, $hash]);
-            $id = (int) db()->lastInsertId();
-            log_activity($id, 'register', 'New user registered');
-            flash('success', 'Account created. Please log in.');
-            redirect('auth/login.php');
+            $payload = [
+                'full_name' => $name,
+                'email' => $email,
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                'consent' => 1,
+            ];
+            $code = create_email_otp($email, 'register', $payload);
+            if (!send_otp_email($email, $name, $code, 'verify your CAMS registration')) {
+                $error = 'We could not send the verification email. Please try again in a moment.';
+            } else {
+                $_SESSION['pending_otp_email'] = $email;
+                $_SESSION['pending_otp_purpose'] = 'register';
+                flash('success', 'We emailed a 6-digit code to ' . $email . '. Enter it to finish signing up.');
+                redirect('auth/verify-otp.php');
+            }
+        }
         }
     }
 }
@@ -78,46 +105,42 @@ $panelImg = e(APP_URL) . '/assets/images/auth-login-panel.png';
         <div class="auth-split-card auth-split-card-wide">
             <p class="auth-kicker">Get started</p>
             <h1>Create your account</h1>
-            <p class="auth-sub">Register to begin CAMS cybersecurity awareness training as a learner.</p>
+            <p class="auth-sub">Register with email (OTP verification) or continue with Google / GitHub<?= $invite ? '. Invitation email is locked below.' : '' ?>.</p>
 
             <?php foreach (get_flashes() as $flash): ?>
                 <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
             <?php endforeach; ?>
             <?php if ($error): ?><div class="alert alert-error"><?= e($error) ?></div><?php endif; ?>
 
+            <?= auth_oauth_buttons_html('register') ?>
+
             <form method="post" action="" class="auth-form">
                 <?= csrf_field() ?>
+                <input type="hidden" name="invite_token" value="<?= e($inviteToken) ?>">
                 <div class="form-group">
                     <label for="full_name">Full name</label>
                     <input type="text" id="full_name" name="full_name" required maxlength="120" value="<?= e($_POST['full_name'] ?? '') ?>">
                 </div>
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required value="<?= e($_POST['email'] ?? '') ?>">
+                    <input type="email" id="email" name="email" required
+                           value="<?= e($_POST['email'] ?? ($invite['email'] ?? '')) ?>"
+                           <?= $invite ? 'readonly' : '' ?>>
                 </div>
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required minlength="8" placeholder="Min. 8 characters">
+                    <input type="password" id="password" name="password" required minlength="8" placeholder="Min. 8 characters" autocomplete="new-password">
                 </div>
                 <div class="form-group">
                     <label for="password_confirm">Confirm password</label>
-                    <input type="password" id="password_confirm" name="password_confirm" required minlength="8">
+                    <input type="password" id="password_confirm" name="password_confirm" required minlength="8" autocomplete="new-password">
                 </div>
                 <div class="form-group checkbox-row">
                     <input type="checkbox" id="consent" name="consent" value="1" <?= isset($_POST['consent']) ? 'checked' : '' ?>>
                     <label for="consent">I agree this is educational use only — no real banking passwords.</label>
                 </div>
-                <button class="btn btn-primary btn-block" type="submit">Create account</button>
+                <button class="btn btn-primary btn-block" type="submit">Send verification code</button>
             </form>
-
-            <div class="auth-help-box">
-                <p class="auth-help-title">After you register</p>
-                <ul>
-                    <li>Open modules and complete lessons</li>
-                    <li>Take quizzes and track your progress</li>
-                    <li>Earn certificates and read security tips</li>
-                </ul>
-            </div>
 
             <p class="auth-footer-note">
                 Already registered?

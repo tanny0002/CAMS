@@ -1,78 +1,65 @@
-# CAMS — User Guide (Demo)
+# CAMS — User Guide
 
-Short guide for demonstrating the Cybersecurity Awareness Management System.
+Local demo guide (PHP on your PC + Supabase database).
 
 ## Start the app (local)
 
 ```powershell
 cd D:\Projects\Repo\Cybersecurity-Awareness-Management-System
 $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
-# MariaDB must be running on 127.0.0.1:3306
+php -c .\.php.ini database/migrate_auth.php
+php -c .\.php.ini database/migrate_access.php
 php -c .\.php.ini -S 127.0.0.1:8080
 ```
 
-Open: **http://127.0.0.1:8080/**
+Open: **http://127.0.0.1:8080/** (use `127.0.0.1`, not `localhost`, for Google sign-in).
 
-## Demo accounts
+`.env` should already point at Supabase (`DB_DRIVER=pgsql`). Keep `CAMS_APP_URL=http://127.0.0.1:8080`.
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@cams.local | Admin@123 |
-| Lecturer | lecturer@cams.local | Lecturer@123 |
-| Student | student@cams.local | Student@123 |
+## Default admin
 
-## Learner walkthrough
+| Email | Temporary password |
+|-------|--------------------|
+| chitaurotanaka00@gmail.com | Admin@CAMS1 |
 
-1. **Register or log in** as the student account (consent checkbox on register).
-2. **Dashboard** — see progress and incomplete-training reminders.
-3. **Courses** — open a module syllabus; use **Start / Continue**.
-4. **Lesson reader** — left sidebar of lessons, on-page outline, mark complete, previous/next.
-5. **Quizzes & exams**
-   - **Practice** — more attempts, lower pass mark; shuffled draw from a 1,000+ question bank.
-   - **Module quiz** — needed toward module certificates.
-   - **Exams** — fewer attempts, higher pass mark.
-6. **Progress** — lesson and quiz status by module.
-7. **Tips** — short security reminders.
-8. **Feedback** — post-training evaluation form.
-9. **Certificate** — appears after all lessons in a module are completed and a module/exam quiz is passed.
+On first login you **must change the password**, then **complete your profile**.
 
-## Lecturer walkthrough
+## Demo walkthrough (recommended order)
 
-1. Log in as lecturer.
-2. Open **Reports** — filter by user, module, pass/fail, date; export **CSV**.
+### A. Admin
+1. Log in → set new password → complete profile.  
+2. **Invite lecturers** (`Admin → Invite lecturers`): pick courses, send email (24h link).  
+3. **Approvals** (`Admin → Approvals`): approve individuals / final student course access.  
+4. Optional: manage modules, lessons, quizzes, tips, CSV reports.
 
-## Admin walkthrough
+### B. Lecturer
+1. Open invitation link → register/sign in with the invited email → complete profile.  
+2. **Invite students** (broadcast emails + courses).  
+3. **Approvals**: approve student course requests (then admin confirms).
 
-1. Log in as admin.
-2. **Users** — activate/deactivate, change roles.
-3. **Modules** — create/edit courses (difficulty, order).
-4. **Lessons** — HTML article content (`h2`/`h3` become the lesson outline).
-5. **Quizzes** — adjust pass mark / attempts; add questions.
-6. **Tips** — publish security tips.
-7. **Reports** — same filters and CSV as lecturer.
+### C. Student (invited)
+1. Accept invitation → register → complete profile → courses unlocked from invite.
 
-## Suggested screenshots for submission
+### D. Student / individual (no invite)
+1. Register → complete profile → select courses.  
+2. Student: lecturer then admin approval. Individual: admin approval + course grant.  
+3. Study lessons → quizzes → progress → certificate when module rules are met.
 
-1. Landing page  
-2. Login (split layout)  
-3. Student dashboard with reminder  
-4. Courses catalog  
-5. Lesson reader (sidebar + TOC)  
-6. Practice quiz (shuffled draw note)  
-7. Quiz result with feedback  
-8. Progress page  
-9. Certificate view  
-10. Admin modules / lessons  
-11. Reports + CSV mention  
+### E. Social sign-in
+- **Google**: browser button (works even if PHP cannot reach Google APIs).  
+- **GitHub**: redirect OAuth.  
+- Incomplete profiles always go to **Complete profile** before the app.
 
-## Re-install (only if you wipe the database)
+## Screenshot checklist
+- [ ] Landing page  
+- [ ] Login / Register / OTP  
+- [ ] Force password + complete profile  
+- [ ] Admin invite lecturer + Approvals  
+- [ ] Lecturer invite students + Approvals  
+- [ ] Lesson reader (sidebar + prose)  
+- [ ] Quiz attempt / result  
+- [ ] Progress / certificate  
+- [ ] Reports CSV  
 
-The installer is disabled after setup (`install.php.bak`). To reinstall:
-
-1. Ensure MariaDB is running and `config/config.php` DB settings are correct.
-2. Rename `install.php.bak` → `install.php`.
-3. Open `/install.php` once (this **drops and recreates** `cams_db`).
-4. Rename `install.php` back to `install.php.bak`.
-5. Optionally run:  
-   `php -c .\.php.ini database/expand_content.php`  
-   `php -c .\.php.ini database/seed_question_banks.php`
+## Password reset
+**Forgot password** sends a branded SMTP email (no on-screen demo tokens).

@@ -47,12 +47,17 @@ if ($appShell) {
         <?php if ($user['role'] === 'admin'): ?>
             <a class="<?= $isActive('/admin/dashboard.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/dashboard.php">Admin</a>
             <a class="<?= $isActive('/admin/users.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/users.php">Users</a>
+            <a class="<?= $isActive('/admin/invites.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/invites.php">Invite lecturers</a>
+            <a class="<?= $isActive('/admin/approvals.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/approvals.php">Approvals</a>
             <a class="<?= $isActive('/admin/modules.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/modules.php">Modules</a>
             <a class="<?= $isActive('/admin/lessons.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/lessons.php">Lessons</a>
             <a class="<?= $isActive('/admin/quizzes.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/quizzes.php">Quizzes</a>
             <a class="<?= $isActive('/admin/tips.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/tips.php">Tips</a>
             <a class="<?= $isActive('/admin/reports.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/reports.php">Reports</a>
         <?php elseif ($user['role'] === 'lecturer'): ?>
+            <a class="<?= $isActive('/lecturer/dashboard.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/lecturer/dashboard.php">Dashboard</a>
+            <a class="<?= $isActive('/lecturer/invites.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/lecturer/invites.php">Invite students</a>
+            <a class="<?= $isActive('/lecturer/approvals.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/lecturer/approvals.php">Approvals</a>
             <a class="<?= $isActive('/admin/reports.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/admin/reports.php">Reports</a>
             <a class="<?= $isActive('/user/lessons.php') ? 'is-active' : '' ?>" href="<?= e(APP_URL) ?>/user/lessons.php">Courses</a>
         <?php else: ?>
@@ -87,17 +92,22 @@ if ($appShell) {
             $topLessonDone = (int) $td->fetchColumn();
             $topOverallPct = $topLessonTotal > 0 ? (int) round(($topLessonDone / $topLessonTotal) * 100) : 0;
 
-            $modRows = db()->query('SELECT id, title FROM modules WHERE is_active = 1 ORDER BY sort_order')->fetchAll();
+            $stats = db()->prepare(
+                "SELECT m.id, m.title,
+                        COUNT(l.id) AS total_l,
+                        COUNT(CASE WHEN lp.status = 'completed' THEN 1 END) AS done_l
+                 FROM modules m
+                 LEFT JOIN lessons l ON l.module_id = m.id AND l.is_active = 1
+                 LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = ?
+                 WHERE m.is_active = 1
+                 GROUP BY m.id, m.title, m.sort_order
+                 ORDER BY m.sort_order"
+            );
+            $stats->execute([$uidTop]);
+            $modRows = $stats->fetchAll();
             foreach ($modRows as $mr) {
-                $lt = db()->prepare('SELECT COUNT(*) FROM lessons WHERE module_id = ? AND is_active = 1');
-                $lt->execute([(int) $mr['id']]);
-                $totalL = (int) $lt->fetchColumn();
-                $ld = db()->prepare(
-                    'SELECT COUNT(*) FROM lesson_progress lp JOIN lessons l ON l.id = lp.lesson_id
-                     WHERE lp.user_id = ? AND l.module_id = ? AND lp.status = \'completed\' AND l.is_active = 1'
-                );
-                $ld->execute([$uidTop, (int) $mr['id']]);
-                $doneL = (int) $ld->fetchColumn();
+                $totalL = (int) $mr['total_l'];
+                $doneL = (int) $mr['done_l'];
                 if ($totalL > 0 && $doneL < $totalL) {
                     $topIncomplete++;
                     if ($topContinueId === null) {

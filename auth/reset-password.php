@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/helpers.php';
 start_app_session();
+ensure_auth_schema();
 
 $token = (string) ($_GET['token'] ?? $_POST['token'] ?? '');
 $error = null;
@@ -46,26 +47,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pageTitle = 'Reset password';
+$bodyClass = 'page-auth';
+$authLayout = true;
 require __DIR__ . '/../includes/header.php';
+
+$panelImg = e(APP_URL) . '/assets/images/auth-login-panel.png';
 ?>
 
-<div class="auth-wrap panel">
-    <h1>Reset password</h1>
-    <p class="muted">Account: <?= e($reset['email']) ?></p>
-    <?php if ($error): ?><div class="alert alert-error"><?= e($error) ?></div><?php endif; ?>
-    <form method="post" action="">
-        <?= csrf_field() ?>
-        <input type="hidden" name="token" value="<?= e($token) ?>">
-        <div class="form-group">
-            <label for="password">New password</label>
-            <input type="password" id="password" name="password" required minlength="8">
+<section class="auth-split" aria-label="Reset password">
+    <aside class="auth-split-visual">
+        <img src="<?= $panelImg ?>" alt="" width="900" height="1600">
+        <div class="auth-split-overlay">
+            <div class="auth-split-copy">
+                <div class="auth-brand-row">
+                    <img class="auth-cams-mark" src="<?= e(APP_URL) ?>/assets/images/cams-shield-logo.png" alt="" width="52" height="56">
+                    <p class="auth-split-brand">CAMS</p>
+                </div>
+                <p class="auth-split-quote">Choose a strong, unique password.</p>
+            </div>
         </div>
-        <div class="form-group">
-            <label for="password_confirm">Confirm password</label>
-            <input type="password" id="password_confirm" name="password_confirm" required minlength="8">
+    </aside>
+
+    <div class="auth-split-panel">
+        <div class="auth-split-card">
+            <p class="auth-kicker">Account recovery</p>
+            <h1>Reset password</h1>
+            <p class="auth-sub">Account: <?= e($reset['email']) ?></p>
+            <?php if ($error): ?><div class="alert alert-error"><?= e($error) ?></div><?php endif; ?>
+            <form method="post" action="" class="auth-form">
+                <?= csrf_field() ?>
+                <input type="hidden" name="token" value="<?= e($token) ?>">
+                <div class="form-group">
+                    <label for="password">New password</label>
+                    <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label for="password_confirm">Confirm password</label>
+                    <input type="password" id="password_confirm" name="password_confirm" required minlength="8" autocomplete="new-password">
+                </div>
+                <button class="btn btn-primary btn-block" type="submit">Update password</button>
+            </form>
         </div>
-        <button class="btn btn-primary" type="submit">Update password</button>
-    </form>
-</div>
+    </div>
+</section>
 
 <?php require __DIR__ . '/../includes/footer.php'; ?>

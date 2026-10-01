@@ -10,6 +10,10 @@ user/.env
 # storage
 storage/sessions/*
 !storage/sessions/.gitkeep
+storage/logs/*
+!storage/logs/.gitkeep
+storage/rate_limits/*
+!storage/rate_limits/.gitkeep
 
 # OS / editor
 .DS_Store

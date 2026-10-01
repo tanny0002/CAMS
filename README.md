@@ -7,7 +7,7 @@ Built with **HTML, CSS, JavaScript, PHP 8+, and MySQL/MariaDB** (XAMPP-friendly)
 ## Requirements
 
 See [REQUIREMENTS.md](REQUIREMENTS.md) for functional and gap requirements.  
-See [USER_GUIDE.md](USER_GUIDE.md) for demo walkthrough and screenshot checklist.
+See [USER_GUIDE.md](USER_GUIDE.md) for walkthrough and screenshot checklist.
 
 ## Clone from GitHub
 
@@ -16,7 +16,7 @@ git clone https://github.com/tanny0002/CAMS.git
 cd CAMS
 ```
 
-Then follow **Quick start** below (MariaDB/MySQL + PHP). Never commit real secrets — use `user/.env.example` as a template only.
+Then follow **Quick start** below (MariaDB/MySQL + PHP). Never commit real secrets — use `.env.example` as a template only. Copy to `.env` and put the Gmail app password in `user/.env` (or `MAIL_PASSWORD` in `.env`).
 
 ## Quick start (PHP built-in server)
 
@@ -49,19 +49,32 @@ php -c .\.php.ini database/seed_question_banks.php
 
 Copy the project under `htdocs`, start Apache + MySQL, then use the same install steps with your XAMPP URL.
 
-### Demo accounts
+### Live auth (email OTP + OAuth)
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@cams.local | Admin@123 |
-| Lecturer | lecturer@cams.local | Lecturer@123 |
-| Student | student@cams.local | Student@123 |
+1. Ensure MariaDB/Postgres is running, then migrate auth tables:
+
+```powershell
+php -c .\.php.ini database/migrate_auth.php
+php -c .\.php.ini database/migrate_access.php
+```
+
+2. Mail uses Gmail SMTP. Set `MAIL_USERNAME` / `MAIL_FROM` and `MAIL_PASSWORD` (Gmail App Password) in `.env` or `user/.env`.
+3. **Default admin** (forced password change on first login):
+
+| Email | Temporary password |
+|-------|--------------------|
+| `chitaurotanaka00@gmail.com` (or `BOOTSTRAP_ADMIN_EMAIL`) | `Admin@CAMS1` (or `BOOTSTRAP_ADMIN_PASSWORD`) |
+
+4. Optional: set Google/GitHub OAuth client IDs (see USER_GUIDE). Redirect URI: `{APP_URL}/auth/oauth-callback.php`.
+
+There are **no shared demo learner accounts**. Lecturers/students join via invitation or approved self-signup.
 
 ## Features
 
-- Register / login / logout with consent notice  
-- Forgot / reset password (local demo token)  
-- Roles: user, lecturer, admin  
+- Register with **email OTP** verification (HTML templates)  
+- **Google** and **GitHub** sign-in / sign-up  
+- Forgot / reset password via **real email**  
+- Roles: user, lecturer, admin (first user or bootstrap email → admin)  
 - Session timeout + CSRF protection  
 - **Modules (courses)** with difficulty and ordered lessons  
 - GeeksforGeeks-style lesson reader (sidebar, TOC, prev/next)  

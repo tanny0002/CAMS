@@ -56,7 +56,7 @@ $quizzes = db()->query(
      (SELECT COUNT(*) FROM questions qs WHERE qs.quiz_id = q.id AND qs.is_active = 1) AS question_count
      FROM quizzes q JOIN modules m ON m.id = q.module_id
      WHERE q.quiz_type <> \'bank\'
-     ORDER BY m.sort_order, FIELD(q.quiz_type, \'practice\', \'module\', \'exam\'), q.id'
+     ORDER BY m.sort_order, CASE q.quiz_type WHEN \'practice\' THEN 1 WHEN \'module\' THEN 2 WHEN \'exam\' THEN 3 ELSE 4 END, q.id'
 )->fetchAll();
 
 $selectedQuizId = (int) ($_GET['quiz'] ?? ($quizzes[0]['id'] ?? 0));

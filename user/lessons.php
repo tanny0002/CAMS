@@ -8,12 +8,23 @@ require_login();
 $uid = (int) current_user()['id'];
 $moduleFilter = (int) ($_GET['module'] ?? 0);
 $q = trim((string) ($_GET['q'] ?? ''));
+$allowedModules = user_approved_module_ids($uid);
+if ($allowedModules === [] && current_user()['role'] !== 'admin') {
+    flash('info', 'You do not have approved course access yet.');
+}
 
 $modulesSql = 'SELECT m.*,
     (SELECT COUNT(*) FROM lessons l WHERE l.module_id = m.id AND l.is_active = 1) AS lesson_count
     FROM modules m
     WHERE m.is_active = 1';
 $moduleParams = [];
+if (current_user()['role'] !== 'admin') {
+    if ($allowedModules === []) {
+        $modulesSql .= ' AND 1=0';
+    } else {
+        $modulesSql .= ' AND m.id IN (' . implode(',', array_map('intval', $allowedModules)) . ')';
+    }
+}
 if ($moduleFilter > 0) {
     $modulesSql .= ' AND m.id = ?';
     $moduleParams[] = $moduleFilter;
@@ -30,7 +41,13 @@ $sql = 'SELECT l.*, m.title AS module_title, m.id AS module_id, m.difficulty,
         LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = ?
         WHERE l.is_active = 1 AND m.is_active = 1';
 $params = [$uid];
-
+if (current_user()['role'] !== 'admin') {
+    if ($allowedModules === []) {
+        $sql .= ' AND 1=0';
+    } else {
+        $sql .= ' AND m.id IN (' . implode(',', array_map('intval', $allowedModules)) . ')';
+    }
+}
 if ($moduleFilter > 0) {
     $sql .= ' AND l.module_id = ?';
     $params[] = $moduleFilter;
